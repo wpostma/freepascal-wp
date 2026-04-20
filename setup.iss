@@ -30,6 +30,7 @@
 #define MsgDir       StagingDir + "\msg"
 #define DocDir       StagingDir + "\doc"
 #define FpmkinstDir  StagingDir + "\fpmkinst"
+#define SrcZip       StagingDir + "\src_" + AppVersion + ".zip"
 
 ; ---------------------------------------------------------------------------
 [Setup]
@@ -68,6 +69,7 @@ Source: "{#FpmkinstDir}\*";               DestDir: "{app}\fpmkinst\{#TargetSuffi
 Source: "{#MsgDir}\*";                    DestDir: "{app}\msg"; Flags: ignoreversion
 Source: "{#DocDir}\*";                    DestDir: "{app}\doc"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#StagingDir}\examples\*";       DestDir: "{app}\examples"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#SrcZip}";                      DestDir: "{app}"; Flags: ignoreversion
 
 ; ---------------------------------------------------------------------------
 [Tasks]
@@ -101,7 +103,10 @@ Filename: "{app}\bin\{#TargetSuffix}\fpcmkcfg.exe"; \
 ; ---------------------------------------------------------------------------
 [UninstallDelete]
 ; fpc.cfg is generated post-install, so the uninstaller won't know about it
-Type: files; Name: "{app}\bin\{#TargetSuffix}\fpc.cfg"
+Type: files;     Name: "{app}\bin\{#TargetSuffix}\fpc.cfg"
+; src\ is extracted post-install from the shipped zip
+Type: filesandordirs; Name: "{app}\src"
+Type: files;     Name: "{app}\src_{#AppVersion}.zip"
 
 ; ---------------------------------------------------------------------------
 [Code]
@@ -124,9 +129,24 @@ end;
 
 // WM_SETTINGCHANGE = $1A.  lParam=0 means "all environment variables changed".
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  SrcZip, SrcDir: string;
+  ResultCode: Integer;
 begin
-  if CurStep = ssPostInstall then
-    SendBroadcastMessage($001A, 0, 0);
+  if CurStep <> ssPostInstall then Exit;
+
+  SrcZip := ExpandConstant('{app}\src_{#AppVersion}.zip');
+  SrcDir := ExpandConstant('{app}\src');
+  if FileExists(SrcZip) then
+  begin
+    ForceDirectories(SrcDir);
+    Exec(ExpandConstant('{sys}') + '\WindowsPowerShell\v1.0\powershell.exe',
+         '-NoProfile -NonInteractive -Command "Expand-Archive -Force -LiteralPath ''' +
+         SrcZip + ''' -DestinationPath ''' + SrcDir + '''"',
+         '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+
+  SendBroadcastMessage($001A, 0, 0);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
