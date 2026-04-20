@@ -112,7 +112,7 @@ interface
 
 {$IFDEF FPC_DOTTEDUNITS}
 uses
-  System.Classes, System.SysUtils, System.Types, System.Contnrs, System.StrUtils,
+  System.Classes, System.SysUtils, System.Types, System.Contnrs, System.StrUtils, System.Math,
   Fcl.AVLTree, FpCss.Tree, FpCss.ValueParser;
 {$ELSE FPC_DOTTEDUNITS}
 uses
@@ -1014,7 +1014,7 @@ begin
   begin
     aSelector:=aRule.Selectors[i];
     Specificity:=SelectorMatches(aSelector,FNode,false,aRule);
-    writeln('TCSSResolver.ComputeRule ',i,' ',Fnode.GetCSSID,' ',aSelector.ClassName,' ',Specificity);
+    //writeln('TCSSResolver.ComputeRule ',i,' ',Fnode.GetCSSID,' ',aSelector.ClassName,' ',Specificity);
     if Specificity>BestSpecificity then
       BestSpecificity:=Specificity;
   end;
