@@ -19,7 +19,7 @@
 #endif
 #ifndef StagingDir
   #error StagingDir must be defined: /DStagingDir=C:\path\to\staging
- ;#define StagingDir  "C:\FPC\fpc-source\fpc-dist"
+  ;#define StagingDir  "C:\FPC\fpc-source\fpc-dist\"
 #endif
 
 #define AppName      "Free Pascal Compiler (Eleazar)"
@@ -62,7 +62,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"; LicenseFile: "license.txt
 
 ; ---------------------------------------------------------------------------
 [Files]
-
+Source: "{#BinDir}\fpc.exe";              DestDir: "{app}\bin\{#TargetSuffix}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#BinDir}\fpcmake.exe";          DestDir: "{app}\bin\{#TargetSuffix}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#BinDir}\*";                    DestDir: "{app}\bin\{#TargetSuffix}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#U}\*";                         DestDir: "{app}\units\{#TargetSuffix}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#FpmkinstDir}\*";               DestDir: "{app}\fpmkinst\{#TargetSuffix}"; Flags: recursesubdirs createallsubdirs ignoreversion
