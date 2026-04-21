@@ -2,12 +2,12 @@
 .SYNOPSIS
     Stage, archive, and package FPC trunk as a Windows installer.
 .DESCRIPTION
-    Three steps, each independently skippable:
+    Three steps:
 
       1. STAGE   -- runs 'make distinstall' into a flat staging tree
                     (mirrors the layout of C:\FPC\3.2.2)
-      2. ZIP     -- compresses the staging tree to a .zip archive
-      3. ISCC    -- compiles setup.iss into a self-contained .exe installer
+      2. ZIP     -- compresses additional files that are NOT already in the staging tree to a .zip 
+      3. ISCC    -- compiles setup.iss into a self-contained .exe installer, that also includes the additional files from step 2.
 
     Expects the compiler to already be built (run build.ps1 first).
 
@@ -78,7 +78,6 @@ param(
     [switch]$SkipInstaller,
     [switch]$SkipGdb,
     [switch]$SkipBinutils,
-    [switch]$SkipGnuTools,
     [switch]$SkipBootstrap32
 )
 
@@ -120,7 +119,7 @@ if (-not $StagingDir) {
     $StagingDir = Join-Path $SrcDir "fpc-dist\fpc-${FpcVersion}.${TargetSuffix}"
 }
 if (-not $ZipDestDir) {
-    $ZipDestDir = Join-Path $SrcDir 'installer'
+    $ZipDestDir = Join-Path $SrcDir 'installer\archives\'
 }
 $null = New-Item -ItemType Directory -Path $ZipDestDir -Force
 
@@ -400,6 +399,7 @@ Write-Host ''
 # The g-prefixed tools are renamed copies per FPC naming convention.
 # gcc and cpp come from mingw64 and share DLLs already copied by binutils.
 
+<#
 $GnuToolsCopy = @(
     @{ Src = 'usr\bin\make.exe';    Dst = 'make.exe'     },
     @{ Src = 'usr\bin\grep.exe';    Dst = 'grep.exe'     },
@@ -418,10 +418,10 @@ $GnuToolsCopy = @(
 )
 $MsysRuntimeDlls = @('msys-2.0.dll', 'msys-iconv-2.dll', 'msys-intl-8.dll')
 
-if ($SkipGnuTools) {
-    Write-Host '--- GNU tools bundle: SKIPPED (-SkipGnuTools) ---' -ForegroundColor DarkGray
-} else {
-    Write-Host '--- Bundling GNU tools ---' -ForegroundColor Cyan
+# DISABLED: relying on bin\win32 bootstrap tools (32-bit make etc.) instead.
+# Re-enable this block if 64-bit MSYS2 GNU tools are needed in bin\x86_64-win64.
+ {
+    Write-Host '--- Bundling MSYS2/ GNU tools ---' -ForegroundColor Cyan
 
     $GnuCopied = 0
     foreach ($tool in $GnuToolsCopy) {
@@ -447,6 +447,7 @@ if ($SkipGnuTools) {
 
     Write-Host "GNU tools bundled: $GnuCopied executables." -ForegroundColor Green
 }
+#>
 
 Write-Host ''
 
@@ -495,15 +496,9 @@ if (-not (Test-Path $SrcZipPath)) {
     $DirsToZip = [System.Collections.Generic.List[string]]::new()
     $DirsToZip.Add((Join-Path $SrcDir 'rtl'))
 
-    $StagedUnitsDir = Join-Path $StagingDir "units\$TargetSuffix"
-    foreach ($UnitDir in (Get-ChildItem $StagedUnitsDir -Directory)) {
-        $PkgSrc = Join-Path $SrcDir "packages\$($UnitDir.Name)"
-        if (Test-Path $PkgSrc) {
-            $DirsToZip.Add($PkgSrc)
-        }
-    }
-
-    Write-Host "  Including: $($DirsToZip.Count) source directories"
+    
+    Write-Host "Zipping: $($DirsToZip.Count) source directories"
+    # ZIPPITY ZIP:
     Compress-Archive -Path $DirsToZip.ToArray() -DestinationPath $SrcZipPath -CompressionLevel Optimal
     if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         Write-Host "ERROR: Compress-Archive failed" -ForegroundColor Red
@@ -515,24 +510,8 @@ if (-not (Test-Path $SrcZipPath)) {
     Write-Host "Source archive already present: $SrcZipPath" -ForegroundColor DarkGray
 }
 
-Write-Host ''
-
-# =============================================================================
-# STEP 2: ZIP
-# =============================================================================
-if (-not $SkipZip) {
-    Write-Host '--- Step 2: Create zip archive ---' -ForegroundColor Cyan
-
-    if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
-
-    Compress-Archive -Path "$StagingDir\*" -DestinationPath $ZipPath
-    $ZipMB = [math]::Round((Get-Item $ZipPath).Length / 1MB, 1)
-    Write-Host "Archive: $ZipPath ($ZipMB MB)" -ForegroundColor Green
-} else {
-    Write-Host '--- Step 2: SKIPPED (--SkipZip) ---' -ForegroundColor DarkGray
-}
-
-Write-Host ''
+Write-Host ' After Source Archive ...'
+Write-Host ' Start InnoSetup...'
 
 # =============================================================================
 # STEP 3: INNO SETUP
