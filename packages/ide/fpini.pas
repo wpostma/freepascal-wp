@@ -207,6 +207,17 @@ begin
         end;
     end;
 {$endif}
+  { UserIDEDir: always the user-writable config directory, regardless of whether
+    it exists yet.  fp-user.cfg is read/written here; fp.cfg (system) is read
+    from SystemIDEDir and is never modified by the IDE. }
+{$ifdef WINDOWS}
+  if GetEnv('APPDATA')<>'' then
+    UserIDEDir:=CompleteDir(FExpand(GetEnv('APPDATA')+'/fp'))
+  else
+    UserIDEDir:=IDEDir;
+{$else}
+  UserIDEDir:=CompleteDir(FExpand('~/.fp'));
+{$endif}
 end;
 
 procedure InitINIFile;
@@ -235,26 +246,18 @@ begin
            begin
              { create new config here }
              IniFilePath:=CurDir+IniFileName;
-             SwitchesPath:=CurDir+SwitchesFileName;
+             { SwitchesPath is intentionally NOT redirected to CurDir;
+               fp.cfg is always the system copy in SystemIDEDir and
+               user overrides live in fp-user.cfg in UserIDEDir. }
            end
          else
            begin
-             { copy config here }
+             { copy INI config here }
              if CopyFile(IniFilePath,CurDir+IniFileName)=false then
                ErrorBox(FormatStrStr(msg_errorwritingfile,CurDir+IniFileName),nil)
              else
-                 IniFilePath:=CurDir+IniFileName;
-             { copy also SwitchesPath to current dir, but only if
-               1) SwitchesPath exists
-               2) SwitchesPath is different from CurDir+SwitchesName }
-             if ExistsFile(SwitchesPath) and
-                not SameFileName(SwitchesPath,CurDir+SwitchesFileName) then
-               begin
-                 if CopyFile(SwitchesPath,CurDir+SwitchesFileName)=false then
-                   ErrorBox(FormatStrStr(msg_errorwritingfile,CurDir+SwitchesFileName),nil)
-                 else
-                   SwitchesPath:=CurDir+SwitchesFileName;
-               end;
+               IniFilePath:=CurDir+IniFileName;
+             { fp.cfg is not copied; user compiler settings are in fp-user.cfg }
            end;
        end
      else

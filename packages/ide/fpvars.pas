@@ -93,12 +93,15 @@ const ClipboardWindow  : PClipboardWindow = nil;
 {$if defined(WINDOWS) or defined(Unix) or defined(Aros)}
       SystemIDEDir     : string = '';
 {$endif defined(WINDOWS) or defined(Unix)}
-var   INIFilePath      : string;
-      SwitchesPath     : string;
-      DesktopPath      : string;
-const INIFileName      : string = ININame;
-      SwitchesFileName : string = SwitchesName;
-      DesktopFileName  : string = DesktopName;
+var   INIFilePath          : string;
+      SwitchesPath        : string;
+      UserSwitchesPath    : string;
+      UserIDEDir          : string;
+      DesktopPath         : string;
+const INIFileName         : string = ININame;
+      SwitchesFileName    : string = SwitchesName;
+      UserSwitchesFileName: string = UserSwitchesName;
+      DesktopFileName     : string = DesktopName;
       DirInfoFileName  : string = DirInfoName;
       CtrlMouseAction  : integer = acTopicSearch;
       AltMouseAction   : integer = acBrowseSymbol;

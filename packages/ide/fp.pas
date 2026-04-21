@@ -463,6 +463,9 @@ BEGIN
   IDEApp.Init;
   CheckINIFile;
   ReadSwitches(SwitchesPath);
+  { Overlay with user-specific compiler settings if fp-user.cfg exists }
+  if ExistsFile(UserSwitchesPath) then
+    ReadSwitches(UserSwitchesPath);
   { load all options after init because of open files }
   ReadINIFile;
   InitDesktopFile;
@@ -592,7 +595,11 @@ BEGIN
 
   DelTempFiles;
   IDEApp.Done;
-  WriteSwitches(SwitchesPath);
+  { Write compiler switches to fp-user.cfg in the user config dir.
+    fp.cfg in SystemIDEDir is never modified by the IDE. }
+  if not ExistsDir(UserIDEDir) then
+    MkDir(UserIDEDir);
+  WriteSwitches(UserSwitchesPath);
 
 {$IFDEF HasSignal}
    DisableCatchSignals;

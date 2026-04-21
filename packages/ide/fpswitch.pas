@@ -1460,10 +1460,15 @@ begin
      AddLongIntItem('~S~tack size','s');
      AddLongIntItem('Local ~h~eap size','h');
    end;}
-  SwitchesPath:=LocateFile(SwitchesFileName);
-  if SwitchesPath='' then
-    SwitchesPath:=SwitchesFileName;
-  SwitchesPath:=FExpand(SwitchesPath);
+  { fp.cfg: always from SystemIDEDir (the IDE's own bin directory).
+    LocateFile is intentionally NOT used here -- it would also search the
+    current/startup directory, which caused stale home-dir configs to win. }
+  SwitchesPath:=SystemIDEDir+SwitchesFileName;
+  if not ExistsFile(SwitchesPath) then
+    SwitchesPath:=FExpand(SwitchesFileName);  { last resort: bare name }
+  { fp-user.cfg: user-writable overrides, always in UserIDEDir
+    (%%APPDATA%%\fp on Windows, ~/.fp on Unix). }
+  UserSwitchesPath:=UserIDEDir+UserSwitchesFileName;
 end;
 
 function GuessDefaultUnitSearchPath: DirStr;

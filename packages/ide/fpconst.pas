@@ -76,6 +76,7 @@ const
      ININame              = FPBaseName+INIExt;
      DirInfoName          = FPBaseName+DirInfoExt;
      SwitchesName         = FPBaseName+SwitchesExt;
+     UserSwitchesName     = FPBaseName+'-user'+SwitchesExt;
      DesktopName          = FPBaseName+DesktopExt;
      BrowserName          = FPBaseName+BrowserExt;
      BackgroundName       = 'fp.ans';
