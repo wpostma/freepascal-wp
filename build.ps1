@@ -214,11 +214,12 @@ $NewPpc  = Join-Path $SrcDir "compiler\$PpcName"
 
 if (Test-Path $NewPpc) {
     $NewVer = (& $NewPpc -iV 2>&1).ToString().Trim()
-    Write-Host "New compiler: $NewPpc ($NewVer)"
+    Write-Host "New compiler backend   : $NewPpc ($NewVer)"
 } else {
     Write-Host "Note: $NewPpc not found -- check build.log" -ForegroundColor Yellow
 }
-Write-Host "Build log   : $SrcDir\build.log"
+Write-Host "New compiler bootstrap : $FpcExe ($FpcVer)  (fpc.exe driver, unchanged from bootstrap)"
+Write-Host "Build log              : $SrcDir\build.log"
 
 # ---- optional install -------------------------------------------------------
 

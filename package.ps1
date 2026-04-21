@@ -33,10 +33,37 @@
     Skip zip archive creation.
 .PARAMETER SkipInstaller
     Skip Inno Setup compilation.
+.PARAMETER SkipGdb
+    Skip bundling gdb.exe and its runtime DLLs.  By default the script
+    copies gdb.exe and every non-system DLL it depends on from the MSYS2
+    mingw64 tree into the staging bin directory so the installer ships a
+    self-contained debugger.  Pass -SkipGdb to omit this step (e.g. for
+    a compiler-only package or when gdb is not installed in MSYS2).
+.PARAMETER SkipBinutils
+    Skip bundling the mingw64 binutils (as.exe, ld.exe, ar.exe, etc.).
+    Without these tools the installed FPC cannot assemble or link anything.
+    They are omitted only if you intend to rely on binutils already on the
+    end-user PATH.
+.PARAMETER SkipGnuTools
+    Skip bundling GNU/MSYS2 tools (make, grep, diff, cp, mv, rm, pwd, cmp,
+    gcc, cpp, ginstall, gecho, gdate, gmkdir) and the MSYS2 runtime DLLs
+    (msys-2.0.dll, msys-iconv-2.dll, msys-intl-8.dll).  These tools match
+    the historical FPC 3.2.2 Windows distribution and are useful for
+    Makefile-based projects.
+.PARAMETER SkipBootstrap32
+    Skip bundling the FPC 3.2.2 i386-win32 bootstrap compiler into
+    bin\win32.  By default package.ps1 copies ppc386.exe, ppcrossx64.exe,
+    fpc.exe, fpcmake.exe and all other files from BootstrapDir into a
+    bin\win32 subdirectory so users can rebuild the compiler from source
+    without a separate FPC 3.2.2 installation.  Note: setup.iss expects
+    this directory to exist; the installer compile will fail if you skip
+    this step without also removing the [Files] entry for bin\win32.
 .EXAMPLE
     .\package.ps1
 .EXAMPLE
     .\package.ps1 -SkipStage -StagingDir C:\FPC\fpc-dist\fpc-3.3.1.x86_64-win64
+.EXAMPLE
+    .\package.ps1 -SkipGdb
 #>
 param(
     [string]$BootstrapDir  = 'C:\FPC\3.2.2\bin\i386-win32',
@@ -48,7 +75,11 @@ param(
     [string]$InnoSetupDir  = 'C:\Program Files (x86)\Inno Setup 6',
     [switch]$SkipStage,
     [switch]$SkipZip,
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [switch]$SkipGdb,
+    [switch]$SkipBinutils,
+    [switch]$SkipGnuTools,
+    [switch]$SkipBootstrap32
 )
 
 Set-StrictMode -Version Latest
@@ -214,6 +245,242 @@ fpc fpcmkcfg.pp
 } else {
     Write-Host "fpcmkcfg.exe already present in staging." -ForegroundColor DarkGray
 }
+
+# =============================================================================
+# GDB BUNDLE
+# =============================================================================
+# Copy gdb.exe and every mingw64 runtime DLL it requires from the local MSYS2
+# installation into the staging bin directory.  setup.iss picks them up
+# automatically via the existing {#BinDir}\* wildcard -- no ISS changes needed.
+#
+# We use ntldd -R (recursive ldd for Windows) to find the full transitive DLL
+# closure, then filter to mingw64 paths only (skipping Windows system DLLs).
+# The DLL filenames are extracted and looked up in the mingw64\bin directory,
+# which avoids any sensitivity to MSYS2 path notation in ntldd output.
+
+$GdbSrc  = Join-Path $MsysDir 'mingw64\bin\gdb.exe'
+$NtlddExe = Join-Path $MsysDir 'usr\bin\ntldd.exe'
+
+if ($SkipGdb) {
+    Write-Host '--- GDB bundle: SKIPPED (-SkipGdb) ---' -ForegroundColor DarkGray
+} elseif (-not (Test-Path $GdbSrc)) {
+    Write-Host 'WARNING: gdb.exe not found -- skipping GDB bundle.' -ForegroundColor Yellow
+    Write-Host "         Run in MSYS2: pacman -S mingw-w64-x86_64-gdb" -ForegroundColor Yellow
+} elseif (-not (Test-Path $NtlddExe)) {
+    Write-Host 'WARNING: ntldd.exe not found -- skipping GDB bundle.' -ForegroundColor Yellow
+    Write-Host "         Run in MSYS2: pacman -S ntldd" -ForegroundColor Yellow
+} else {
+    Write-Host '--- Bundling GDB + runtime DLLs ---' -ForegroundColor Cyan
+
+    $GdbSrcPosix  = To-Posix $GdbSrc
+    $Mingw64Posix = To-Posix (Join-Path $MsysDir 'mingw64\bin')
+    $MsysUsrPosix = To-Posix (Join-Path $MsysDir 'usr\bin')
+
+    # Run ntldd -R, filter to mingw64 lines, extract just the DLL filename.
+    # Using basename avoids any dependency on MSYS2 vs Windows path notation.
+    $NtlddScript = @"
+export PATH='$($Mingw64Posix):$($MsysUsrPosix):/bin'
+ntldd -R '$GdbSrcPosix' \
+  | grep -i 'mingw64' \
+  | sed 's/.*=> //' \
+  | sed 's/ (0x[0-9a-fA-F]*).*//' \
+  | xargs -I{} basename '{}' \
+  | tr -d '\r' \
+  | sort -u
+"@
+
+    $DllNames = (& $BashExe --norc --noprofile -c $NtlddScript) -split "`n" |
+                Where-Object { $_.Trim() -ne '' }
+
+    Copy-Item $GdbSrc -Destination $BinDest -Force
+    Write-Host '  gdb.exe'
+
+    $Copied = 0
+    foreach ($dll in $DllNames) {
+        $src = Join-Path $MsysDir "mingw64\bin\$dll"
+        if (Test-Path $src) {
+            Copy-Item $src -Destination $BinDest -Force
+            Write-Host "  $dll"
+            $Copied++
+        }
+    }
+
+    Write-Host "GDB bundled: gdb.exe + $Copied runtime DLLs." -ForegroundColor Green
+}
+
+Write-Host ''
+
+# =============================================================================
+# BINUTILS BUNDLE
+# =============================================================================
+# as.exe and ld.exe are called by FPC for every compile -- without them the
+# installed compiler cannot produce output.  The full set below covers every
+# tool a Pascal developer is likely to need (resource compiler, archiver,
+# symbol listing, disassembler, etc.).  Binutils DLL deps are a small subset
+# of gdb's, so most DLLs will already be present after the GDB step.
+
+$BinutilsExes = @(
+    'as.exe',       # assembler         -- required by FPC
+    'ld.exe',       # linker            -- required by FPC
+    'ar.exe',       # static-lib archiver
+    'ranlib.exe',   # archive indexer
+    'nm.exe',       # symbol listing
+    'strip.exe',    # strip debug info
+    'objdump.exe',  # disassembler / object inspector
+    'objcopy.exe',  # object file conversion
+    'dlltool.exe',  # import-library generator
+    'windres.exe',  # Windows resource compiler
+    'windmc.exe',   # Windows message compiler
+    'addr2line.exe' # address -> source line (debugger support)
+)
+
+if ($SkipBinutils) {
+    Write-Host '--- Binutils bundle: SKIPPED (-SkipBinutils) ---' -ForegroundColor DarkGray
+} else {
+    Write-Host '--- Bundling binutils ---' -ForegroundColor Cyan
+
+    $Mingw64Bin = Join-Path $MsysDir 'mingw64\bin'
+
+    # Collect paths of all present binutils exes for the ntldd pass.
+    $PresentExes   = $BinutilsExes | ForEach-Object { Join-Path $Mingw64Bin $_ } |
+                     Where-Object  { Test-Path $_ }
+    $MissingBinutils = $BinutilsExes | Where-Object { -not (Test-Path (Join-Path $Mingw64Bin $_)) }
+
+    if ($MissingBinutils) {
+        Write-Host "WARNING: some binutils not found in $Mingw64Bin -- skipping those:" -ForegroundColor Yellow
+        $MissingBinutils | ForEach-Object { Write-Host "  missing: $_" -ForegroundColor Yellow }
+        Write-Host "         Run in MSYS2: pacman -S mingw-w64-x86_64-binutils" -ForegroundColor Yellow
+    }
+
+    # Copy the executables.
+    foreach ($exe in $PresentExes) {
+        Copy-Item $exe -Destination $BinDest -Force
+        Write-Host "  $(Split-Path $exe -Leaf)"
+    }
+
+    # Find DLL deps across all binutils in one ntldd pass.
+    if ($PresentExes -and (Test-Path $NtlddExe)) {
+        $ExePosixList = ($PresentExes | ForEach-Object { "'$(To-Posix $_)'" }) -join ' '
+        $Mingw64Posix2 = To-Posix $Mingw64Bin
+        $MsysUsrPosix2 = To-Posix (Join-Path $MsysDir 'usr\bin')
+
+        $BinutilsDllScript = @"
+export PATH='$($Mingw64Posix2):$($MsysUsrPosix2):/bin'
+for exe in $ExePosixList; do
+  ntldd -R "`$exe" 2>/dev/null | grep -i 'mingw64' | sed 's/.*=> //' | sed 's/ (0x[0-9a-fA-F]*).*//' | xargs -I{} basename '{}'
+done | tr -d '\r' | sort -u
+"@
+        $BinutilsDlls = (& $BashExe --norc --noprofile -c $BinutilsDllScript) -split "`n" |
+                        Where-Object { $_.Trim() -ne '' }
+
+        $DllsCopied = 0
+        foreach ($dll in $BinutilsDlls) {
+            $src = Join-Path $Mingw64Bin $dll
+            if (Test-Path $src) {
+                Copy-Item $src -Destination $BinDest -Force
+                $DllsCopied++
+            }
+        }
+        if ($DllsCopied) { Write-Host "  + $DllsCopied runtime DLLs" }
+    }
+
+    Write-Host "Binutils bundled: $($PresentExes.Count) executables." -ForegroundColor Green
+}
+
+Write-Host ''
+
+# =============================================================================
+# GNU TOOLS BUNDLE
+# =============================================================================
+# Copy classic GNU tools from MSYS2 into the staging bin directory to match
+# the layout of the old FPC 3.2.2 Windows distribution.  These tools let
+# Makefile-based projects build without a separate MSYS2 install on PATH.
+#
+# usr/bin tools need the MSYS2 runtime layer (msys-2.0.dll etc.).
+# The g-prefixed tools are renamed copies per FPC naming convention.
+# gcc and cpp come from mingw64 and share DLLs already copied by binutils.
+
+$GnuToolsCopy = @(
+    @{ Src = 'usr\bin\make.exe';    Dst = 'make.exe'     },
+    @{ Src = 'usr\bin\grep.exe';    Dst = 'grep.exe'     },
+    @{ Src = 'usr\bin\diff.exe';    Dst = 'diff.exe'     },
+    @{ Src = 'usr\bin\cp.exe';      Dst = 'cp.exe'       },
+    @{ Src = 'usr\bin\mv.exe';      Dst = 'mv.exe'       },
+    @{ Src = 'usr\bin\rm.exe';      Dst = 'rm.exe'       },
+    @{ Src = 'usr\bin\pwd.exe';     Dst = 'pwd.exe'      },
+    @{ Src = 'usr\bin\cmp.exe';     Dst = 'cmp.exe'      },
+    @{ Src = 'usr\bin\install.exe'; Dst = 'ginstall.exe' },
+    @{ Src = 'usr\bin\echo.exe';    Dst = 'gecho.exe'    },
+    @{ Src = 'usr\bin\date.exe';    Dst = 'gdate.exe'    },
+    @{ Src = 'usr\bin\mkdir.exe';   Dst = 'gmkdir.exe'   },
+    @{ Src = 'mingw64\bin\gcc.exe'; Dst = 'gcc.exe'      },
+    @{ Src = 'mingw64\bin\cpp.exe'; Dst = 'cpp.exe'      }
+)
+$MsysRuntimeDlls = @('msys-2.0.dll', 'msys-iconv-2.dll', 'msys-intl-8.dll')
+
+if ($SkipGnuTools) {
+    Write-Host '--- GNU tools bundle: SKIPPED (-SkipGnuTools) ---' -ForegroundColor DarkGray
+} else {
+    Write-Host '--- Bundling GNU tools ---' -ForegroundColor Cyan
+
+    $GnuCopied = 0
+    foreach ($tool in $GnuToolsCopy) {
+        $src = Join-Path $MsysDir $tool.Src
+        if (Test-Path $src) {
+            Copy-Item $src -Destination (Join-Path $BinDest $tool.Dst) -Force
+            Write-Host "  $(Split-Path $tool.Src -Leaf) -> $($tool.Dst)"
+            $GnuCopied++
+        } else {
+            Write-Host "  SKIP (not found): $($tool.Src)" -ForegroundColor DarkGray
+        }
+    }
+
+    foreach ($dll in $MsysRuntimeDlls) {
+        $src = Join-Path $MsysDir "usr\bin\$dll"
+        if (Test-Path $src) {
+            Copy-Item $src -Destination $BinDest -Force
+            Write-Host "  $dll"
+        } else {
+            Write-Host "  SKIP (not found): $dll" -ForegroundColor DarkGray
+        }
+    }
+
+    Write-Host "GNU tools bundled: $GnuCopied executables." -ForegroundColor Green
+}
+
+Write-Host ''
+
+# =============================================================================
+# BOOTSTRAP WIN32 BUNDLE (bin\win32)
+# =============================================================================
+# Ship the FPC 3.2.2 i386-win32 bootstrap compiler in bin\win32 so users
+# can rebuild the compiler from source without a separate 3.2.2 installation.
+# Key files: ppc386.exe (i386 native), ppcrossx64.exe (i386->x86_64 cross),
+# fpc.exe (driver), fpcmake.exe.  All files in BootstrapDir are copied.
+
+$Win32BinDest = Join-Path $StagingDir 'bin\win32'
+
+if ($SkipBootstrap32) {
+    Write-Host '--- Bootstrap win32 bundle: SKIPPED (-SkipBootstrap32) ---' -ForegroundColor DarkGray
+    Write-Host '    NOTE: setup.iss expects bin\win32; installer compile will fail.' -ForegroundColor Yellow
+} elseif (-not (Test-Path $BootstrapDir)) {
+    Write-Host "WARNING: Bootstrap dir not found ($BootstrapDir) -- skipping win32 bundle." -ForegroundColor Yellow
+    Write-Host "         NOTE: setup.iss expects bin\win32; installer compile will fail." -ForegroundColor Yellow
+} else {
+    Write-Host '--- Bundling 3.2.2 bootstrap into bin\win32 ---' -ForegroundColor Cyan
+
+    $null = New-Item -ItemType Directory -Path $Win32BinDest -Force
+
+    $Win32Count = 0
+    foreach ($f in (Get-ChildItem $BootstrapDir -File)) {
+        Copy-Item $f.FullName -Destination $Win32BinDest -Force
+        $Win32Count++
+    }
+
+    Write-Host "Bootstrap win32: $Win32Count files -> $Win32BinDest" -ForegroundColor Green
+}
+
+Write-Host ''
 
 # ---- RTL + packages source archive ------------------------------------------
 # Include rtl/ always, plus packages/<name>/ for every unit dir that was staged.

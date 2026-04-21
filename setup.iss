@@ -26,6 +26,7 @@
 #define AppPublisher "Warren Postma / Eleazar Project (not affiliated with FreePascal.org)"
 #define AppURL       "https://www.freepascal.org/"
 #define BinDir       StagingDir + "\bin\" + TargetSuffix
+#define Win32BinDir  StagingDir + "\bin\win32"
 #define U            StagingDir + "\units\" + TargetSuffix
 #define MsgDir       StagingDir + "\msg"
 #define DocDir       StagingDir + "\doc"
@@ -65,6 +66,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"; LicenseFile: "license.txt
 Source: "{#BinDir}\fpc.exe";              DestDir: "{app}\bin\{#TargetSuffix}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#BinDir}\fpcmake.exe";          DestDir: "{app}\bin\{#TargetSuffix}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#BinDir}\*";                    DestDir: "{app}\bin\{#TargetSuffix}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#Win32BinDir}\*";               DestDir: "{app}\bin\win32"; Flags: ignoreversion
 Source: "{#U}\*";                         DestDir: "{app}\units\{#TargetSuffix}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#FpmkinstDir}\*";               DestDir: "{app}\fpmkinst\{#TargetSuffix}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#MsgDir}\*";                    DestDir: "{app}\msg"; Flags: ignoreversion
