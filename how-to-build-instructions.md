@@ -1,19 +1,28 @@
-# How to Build FreePascal from Source (Linux x86_64)
+# How to Build FreePascal from Source (Linux x86_64 and windows, mac tbd)
 
-Tested on Ubuntu 24.04 (Noble), March 2026.
+LINUX Version tested on Ubuntu 24.04 (Noble), March 2026.
 Building FPC trunk (3.3.1) from the main branch.
 
+WINDOWS version tested on Windows 11, using FPC trunk 3.3.1 main branch.
+
+
 ## Quick start
+
+Linux
 
 ```bash
 bash install-bootstrap.sh    # one-time: downloads FPC 3.2.2 to /opt
 bash build.sh                 # builds trunk using locked-down PATH
 ```
 
+Windows
+```
+  build.ps1
+```
+
 ## How it works
 
-The build uses three scripts that keep the bootstrap and trunk compilers
-strictly separated:
+The Linux build script uses three scripts that keep the bootstrap and trunk compilers strictly separated:
 
 | Script | Purpose |
 |--------|---------|
@@ -35,9 +44,13 @@ installed trunk compiler in `/usr/local/bin/fpc` could end up
 bootstrapping itself, which defeats the purpose of having a known-good
 bootstrap version.
 
+For windows, instead of a locked down path, we hard code the path requirement to c:\fpc\3.3.1 for the bootstrap binary installation location.
+
 ## Prerequisites
 
 ### System packages
+
+LINUX Prerequisites
 
 All of these were already present on a typical Ubuntu desktop install,
 but install them if missing:
@@ -68,9 +81,13 @@ sudo bash uninstall-bootstrap.sh
 
 ### Quick smoke test
 
+LINUX:
 ```bash
 /opt/fpc-3.2.2/bin/fpc /tmp/hello.pas -o/tmp/hello && /tmp/hello
 ```
+
+WINDOWS:
+TBD
 
 ## Building
 
@@ -101,8 +118,9 @@ itself is single-threaded.
 You must pass `-Fu./rtl/units/x86_64-linux/` to point the newly-built
 compiler at the newly-built RTL units (it doesn't have an fpc.cfg yet).
 
-### Install to /usr/local
+### LINUX: Command line Install to /usr/local
 
+LINUX:
 After building, install the trunk compiler for general use:
 
 ```bash
@@ -126,7 +144,14 @@ Verify:
 fpc /tmp/hello.pas -o/tmp/hello && /tmp/hello
 ```
 
+## Windows installer
+
+Build the installer for windows with package.ps1
+Requires Innosetup 6 be installed.
+
 ## Troubleshooting
+
+LINUX TIPS:
 
 - **No FPC in Ubuntu 24.04 repos:** Use `install-bootstrap.sh` to get
   the bootstrap compiler from the official tarball.
@@ -150,6 +175,10 @@ fpc /tmp/hello.pas -o/tmp/hello && /tmp/hello
   filenames and identifiers. A successful build ends with
   `Build > build-stamp.x86_64-linux`.
 
+WINDOWS TROUBLESHOOTING:
+
+TBD
+
 ## Build outputs
 
 After a successful build:
@@ -161,7 +190,8 @@ After a successful build:
 | Utilities | `utils/*/bin/x86_64-linux/` |
 | Build stamp | `build-stamp.x86_64-linux` |
 
-After `make install INSTALL_PREFIX=/usr/local`:
+
+LINUX: After `make install INSTALL_PREFIX=/usr/local`:
 
 | Artifact | Path |
 |----------|------|
@@ -204,16 +234,21 @@ If you reinstall, regenerate the config with `fpcmkcfg`:
 The bootstrap installer (`install.sh`) writes several files to `/etc`
 that should be removed after you set up prefix-specific configs:
 
+LINUX Cleanup:
+
 ```bash
 sudo rm -f /etc/fpc.cfg
 sudo rm -f /etc/fppkg.cfg
 sudo rm -rf /etc/fppkg
 ```
+WINDOWS Cleanup:
+todo.
 
 ## Notes
 
 - The source tree version is 3.3.1 (trunk/development).
 - Required bootstrap version: 3.2.2 (set in `Makefile.fpc` line 23).
 - Default build target matches the host: `x86_64-linux`.
-- The bootstrap compiler (3.2.2) produces statically-linked binaries,
-  so no shared library issues on Ubuntu 24.04.
+  or, on windows x86_64-win
+  
+

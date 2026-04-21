@@ -71,8 +71,10 @@ Source: "{#U}\*";                         DestDir: "{app}\units\{#TargetSuffix}"
 Source: "{#FpmkinstDir}\*";               DestDir: "{app}\fpmkinst\{#TargetSuffix}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#MsgDir}\*";                    DestDir: "{app}\msg"; Flags: ignoreversion
 Source: "{#DocDir}\*";                    DestDir: "{app}\doc"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "rtl\*";                          DestDir: "{app}\src\rtl"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "packages\*";                     DestDir: "{app}\src\packages"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "{#StagingDir}\examples\*";       DestDir: "{app}\examples"; Flags: recursesubdirs createallsubdirs ignoreversion
-Source: "{#SrcZip}";                      DestDir: "{app}"; Flags: ignoreversion
+;Source: "{#SrcZip}";                      DestDir: "{app}"; Flags: ignoreversion
 
 ; ---------------------------------------------------------------------------
 [Tasks]
@@ -80,7 +82,7 @@ Name: addtopath; Description: "Add compiler bin directory to system PATH"; Flags
 
 ; ---------------------------------------------------------------------------
 [Registry]
-; Add the compiler bin dir to the system PATH (HKLM) -- only if task selected.
+; Add both bin dirs to the system PATH (HKLM) -- only if task selected.
 Root: HKLM; \
   Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; \
   ValueType: expandsz; \
@@ -88,7 +90,16 @@ Root: HKLM; \
   ValueData: "{app}\bin\{#TargetSuffix};{olddata}"; \
   Tasks: addtopath; \
   Check: NeedsAddPath(ExpandConstant('{app}\bin\{#TargetSuffix}')); \
-  Flags: preservestringtype uninsdeletevalue
+  Flags: preservestringtype
+
+Root: HKLM; \
+  Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; \
+  ValueType: expandsz; \
+  ValueName: "Path"; \
+  ValueData: "{app}\bin\win32;{olddata}"; \
+  Tasks: addtopath; \
+  Check: NeedsAddPath(ExpandConstant('{app}\bin\win32')); \
+  Flags: preservestringtype
 
 ; ---------------------------------------------------------------------------
 [Icons]
@@ -159,13 +170,18 @@ var
 begin
   if CurUninstallStep <> usPostUninstall then Exit;
 
-  BinDir := ExpandConstant('{app}\bin\{#TargetSuffix}');
   if not RegQueryStringValue(HKLM,
       'SYSTEM\CurrentControlSet\Control\Session Manager\Environment',
       'Path', OrigPath) then Exit;
 
-  // Remove our entry (with either leading or trailing semicolon)
   NewPath := OrigPath;
+
+  BinDir := ExpandConstant('{app}\bin\{#TargetSuffix}');
+  StringChange(NewPath, ';' + BinDir, '');
+  StringChange(NewPath, BinDir + ';', '');
+  StringChange(NewPath, BinDir,       '');
+
+  BinDir := ExpandConstant('{app}\bin\win32');
   StringChange(NewPath, ';' + BinDir, '');
   StringChange(NewPath, BinDir + ';', '');
   StringChange(NewPath, BinDir,       '');
