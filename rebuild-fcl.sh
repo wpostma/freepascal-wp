@@ -6,14 +6,29 @@
 # Copies the rebuilt .ppu/.o files into the installed FPC unit directory
 # so Lazarus/LCL picks them up on next build.
 #
+# Cross-platform (Linux + macOS); shared detection helpers come from
+# _build-tool.sh.
+#
 set -euo pipefail
 
 SRCDIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SRCDIR}/_build-tool.sh"
+
+# ---- Detect target triple ----
+case "$(uname -s)" in
+  Darwin) OS_TARGET="darwin" ;;
+  Linux)  OS_TARGET="linux"  ;;
+  *)      echo "Unsupported OS: $(uname -s)" >&2; exit 1 ;;
+esac
+bt_detect_arch
+TARGET="${ARCH_TARGET}-${OS_TARGET}"
+
 FPCVER="$(fpc -iV)"
-INSTALLED="/usr/local/lib/fpc/${FPCVER}/units/x86_64-linux/fcl-net"
-BUILT="${SRCDIR}/packages/fcl-net/units/x86_64-linux"
+INSTALLED="/usr/local/lib/fpc/${FPCVER}/units/${TARGET}/fcl-net"
+BUILT="${SRCDIR}/packages/fcl-net/units/${TARGET}"
 
 echo "FPC version:  ${FPCVER}"
+echo "Target:       ${TARGET}"
 echo "Source:       ${SRCDIR}/packages/fcl-net/src/"
 echo "Build output: ${BUILT}"
 echo "Install to:   ${INSTALLED}"
@@ -44,13 +59,13 @@ echo ""
 
 # ---- Install ----
 echo "Installing to ${INSTALLED} (requires sudo)..."
-sudo cp -v "${BUILT}"/*.ppu "${BUILT}"/*.o "${BUILT}"/*.rsj "${INSTALLED}/" 2>/dev/null
+sudo cp -v "${BUILT}"/*.ppu "${BUILT}"/*.o "${BUILT}"/*.rsj "${INSTALLED}/" 2>/dev/null || true
 
 # ---- Verify ----
 echo ""
 echo "Verifying installed ssockets.ppu is newer than source..."
-SRC_TIME=$(stat --format='%Y' "${SRCDIR}/packages/fcl-net/src/ssockets.pp")
-PPU_TIME=$(stat --format='%Y' "${INSTALLED}/ssockets.ppu")
+SRC_TIME=$(bt_file_mtime "${SRCDIR}/packages/fcl-net/src/ssockets.pp")
+PPU_TIME=$(bt_file_mtime "${INSTALLED}/ssockets.ppu")
 
 if [ "$PPU_TIME" -ge "$SRC_TIME" ]; then
   echo "OK — installed .ppu is up to date"
@@ -60,4 +75,4 @@ else
 fi
 
 echo ""
-echo "Done. Rebuild your LCL now (e.g. DIAG=1 bash build.sh)"
+echo "Done. Rebuild your LCL now (e.g. bash build.sh)"

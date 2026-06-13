@@ -1,4 +1,4 @@
-# How to Build FreePascal from Source (Linux x86_64 and windows, mac tbd)
+# How to Build FreePascal from Source (Linux x86_64, Windows, and macOS)
 
 LINUX Version tested on Ubuntu 24.04 (Noble), March 2026.
 Building FPC trunk (3.3.1) from the main branch.
@@ -22,17 +22,29 @@ Windows
 
 ## How it works
 
-The Linux build script uses three scripts that keep the bootstrap and trunk compilers strictly separated:
+The Unix build keeps the bootstrap and trunk compilers strictly separated.
+`build.sh` is a thin dispatcher: it detects the OS via `uname` and hands off
+to the matching per-platform script. Logic both share — OS/arch detection,
+bootstrap discovery, the locked-down PATH, the build invocation — lives in
+`_build-tool.sh`, which the per-platform scripts `source`.
 
 | Script | Purpose |
 |--------|---------|
-| `install-bootstrap.sh` | Downloads FPC 3.2.2 to `/opt/fpc-3.2.2` (idempotent) |
-| `build.sh` | Builds trunk with a locked-down PATH (bootstrap only) |
-| `uninstall-bootstrap.sh` | Removes FPC 3.2.2 from `/usr` (if installed there by mistake) |
+| `install-bootstrap.sh` | **Linux only** — downloads FPC 3.2.2 to `/opt/fpc-3.2.2` (idempotent) |
+| `build.sh` | Dispatcher — detects OS and runs `build-linux.sh` or `build-mac.sh` |
+| `build-linux.sh` | Linux build (bootstrap order: `$FPC_BOOTSTRAP` → `which fpc` → `/opt/fpc-3.2.2`) |
+| `build-mac.sh` | macOS build (bootstrap order: `$FPC_BOOTSTRAP` → `which fpc`) |
+| `_build-tool.sh` | Shared helpers + cross-compile/build-stamp documentation (sourced, not run) |
+| `uninstall-bootstrap.sh` | **Linux only** — removes FPC 3.2.2 from `/usr` (if installed there by mistake) |
+
+On macOS, install FPC first (official macOS installer or Homebrew); the
+build auto-detects it on PATH or via `$FPC_BOOTSTRAP`. Windows uses the
+separate `build.ps1`.
 
 ### Why a locked-down PATH?
 
-The `build.sh` script sets PATH to exactly:
+The per-platform build script (`build-linux.sh` / `build-mac.sh`) sets PATH
+to exactly:
 
 ```
 /opt/fpc-3.2.2/bin:/usr/bin:/bin

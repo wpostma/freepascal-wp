@@ -1,7 +1,11 @@
 #!/bin/bash
 #
+# LINUX ONLY!
 # Download and install the FPC 3.2.2 bootstrap compiler to /opt/fpc-3.2.2.
 # Idempotent — safe to re-run.
+#
+# On macOS, install FPC via the official macOS installer or Homebrew, then
+# run build.sh (it auto-detects fpc on PATH or honours $FPC_BOOTSTRAP).
 #
 set -euo pipefail
 
