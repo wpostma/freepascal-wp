@@ -42,29 +42,38 @@
            aobject.inheritsfrom(aclass);
       end;
 
+type
+  TCastErrorFromMode = (CastErrorFromNA, CastErrorFromClass, CastErrorFromExternalInterface);
+  TCastErrorToMode = (CastErrorToNA, CastErrorToClass, CastErrorToComInterface, CastErrorToCorbaInterface);
+
 {$IFDEF FPC_HAS_FEATURE_THREADING}
 threadvar
-  CastErrorFrom : ShortString;
-  CastErrorTo : ShortString;
 {$ELSE}
 var
-  CastErrorFrom : ShortString = '';
-  CastErrorTo : ShortString = '';
 {$ENDIF}
-
-
-    procedure SetCastErrorInfo(const aFrom,aTo : shortstring);
-    begin
-      CastErrorFrom:=aFrom;
-      CastErrorTo:=aTo;
+  CastError: record
+    From: record
+    case Mode: TCastErrorFromMode of
+      CastErrorFromClass: (_Class: TClass);
     end;
+    _To: record
+    case Mode: TCastErrorToMode of
+      CastErrorToClass: (_Class: TClass);
+      CastErrorToComInterface: (IID: TGUID);
+      CastErrorToCorbaInterface: (CorbaName: string[15]);
+    end;
+  end;
+
 
     { the reverse order of the parameters make code generation easier }
     function fpc_do_as(aclass : tclass;aobject : tobject): tobject;[public,alias: 'FPC_DO_AS']; compilerproc;
       begin
          if assigned(aobject) and not(aobject.inheritsfrom(aclass)) then
            begin
-           SetCastErrorInfo(aObject.ClassName,aClass.ClassName);
+           CastError.From.Mode:=CastErrorFromClass;
+           CastError.From._Class:=aObject.ClassType;
+           CastError._To.Mode:=CastErrorToClass;
+           CastError._To._Class:=aClass;
            handleerroraddrframeInd(219,get_pc_addr,get_frame);
            end;
          result := aobject;
@@ -232,9 +241,14 @@ var
              if IUnknown(S).QueryInterface(iid,tmpi)<>S_OK then
                begin
                if (IUnknown(S).QueryInterface(IObjectInstance,errObj)=S_OK) then
-                 SetCastErrorInfo(errObj.ClassName,iid.AsString)
+                 begin
+                 CastError.From.Mode:=CastErrorFromClass;
+                 CastError.From._Class:=errObj.ClassType;
+                 end
                else
-                 SetCastErrorInfo('External interface',iid.AsString);
+                 CastError.From.Mode:=CastErrorFromExternalInterface;
+               CastError._To.Mode:=CastErrorToComInterface;
+               CastError._To.IID:=iid;
                handleerror(219);
                end;
              // decrease reference count
@@ -256,9 +270,14 @@ var
             if not ((IUnknown(S).QueryInterface(IObjectInstance,tmpo)=S_OK) and tmpo.inheritsfrom(aclass)) then
               begin
               if (IUnknown(S).QueryInterface(IObjectInstance,errObj)=S_OK) then
-                SetCastErrorInfo(errObj.ClassName,aClass.ClassName)
+                begin
+                CastError.From.Mode:=CastErrorFromClass;
+                CastError.From._Class:=errObj.ClassType;
+                end
               else
-                SetCastErrorInfo('External interface',aClass.ClassName);
+                CastError.From.Mode:=CastErrorFromExternalInterface;
+              CastError._To.Mode:=CastErrorToClass;
+              CastError._To._Class:=aClass;
               handleerror(219);
               end;
             fpc_intf_as_class:=tmpo;
@@ -280,7 +299,10 @@ var
              tmpi2:=nil;
              if not ((TObject(S).GetInterfaceWeak(IUnknown,tmpi2) and (IUnknown(tmpi2).QueryInterface(IID,tmpi)=S_OK)) or TObject(S).GetInterface(IID,tmpi)) then
                begin
-               SetCastErrorInfo(TObject(S).ClassName,iid.AsString);
+               CastError.From.Mode:=CastErrorFromClass;
+               CastError.From._Class:=TObject(S).ClassType;
+               CastError._To.Mode:=CastErrorToComInterface;
+               CastError._To.IID:=iid;
                handleerror(219);
                end;
              // decrease reference count
@@ -301,7 +323,10 @@ var
              tmpi:=nil;
              if not TObject(S).GetInterface(iid,tmpi) then
                begin
-               SetCastErrorInfo(TObject(S).ClassName,iid);
+               CastError.From.Mode:=CastErrorFromClass;
+               CastError.From._Class:=TObject(S).ClassType;
+               CastError._To.Mode:=CastErrorToCorbaInterface;
+               CastError._To.CorbaName:=iid;
                handleerror(219);
                end;
              fpc_class_as_corbaintf:=tmpi;
@@ -358,6 +383,7 @@ begin
   Result:=Create(PByte(@aData),aBigEndian);
 end;
 
+
 class function TGUID.Create(const aData : PByte; aBigEndian: Boolean = False): TGUID; overload; static;
 
 const
@@ -370,6 +396,54 @@ begin
   Result.D1:=SwapEndian(Result.D1);
   Result.D2:=SwapEndian(Result.D2);
   Result.D3:=SwapEndian(Result.D3);
+end;
+
+
+const
+  cAsStringByteScatter: array[0 .. 15] of byte =
+  (
+    // Character 1: {.
+    // Bytes 0−3 go to characters 2−9 as uint32.
+  {$ifdef ENDIAN_LITTLE} 8{..9}, 6{..7}, 4{..5}, 2{..3}, {$else} 2{..3}, 4{..5}, 6{..7}, 8{..9}, {$endif}
+    // Character 10: -.
+    // Bytes 4−5 go to characters 11−14 as uint16.
+    // Character 15: -.
+    // Bytes 6-7 go to characters 16−19 as uint16.
+  {$ifdef ENDIAN_LITTLE} 13{..14}, 11{..12}, 18{..19}, 16{..17}, {$else} 11{..12}, 13{..14}, 16{..17}, 18{..19}, {$endif}
+    // Character 20: -.
+    // Bytes 8-9 go to characters 21−24 as single bytes.
+    21{..22}, 23{..24},
+    // Character 25: -.
+    // Bytes 10-15 go to characters 26−37 as single bytes.
+    26{..27}, 28{..29}, 30{..31}, 32{..33}, 34{..35}, 36{..37}
+    // Character 38: }.
+  );
+
+class function TGUID.FromString(const S: ShortString; out GUID: TGUID): Boolean;
+  function ParseHexDigit(c: char; var aRes : Boolean): Byte;
+  begin
+    case c of
+      '0'..'9': Result := Byte(c) - Byte('0');
+      'a'..'f': Result := Byte(c) - Byte('a') + 10;
+      'A'..'F': Result := Byte(c) - Byte('A') + 10;
+    else
+      aRes := False;
+    end;
+  end;
+
+var
+  iByte: SizeInt;
+  sp: PChar;
+
+begin
+  Result := (Length(S)=38) and (S[1]='{') and (S[10]='-') and (S[15]='-') and (S[20]='-') and (S[25]='-') and (S[38]='}');
+  if not Result then exit;
+  for iByte := 0 to High(cAsStringByteScatter) do
+  begin
+    sp := PChar(Pointer(@S[1])) + cAsStringByteScatter[iByte] - 1 { AsStringByteScatter values are 1-based. };
+    PByte(@Guid)[iByte] := ParseHexDigit(sp[0], Result) shl 4 + ParseHexDigit(sp[1],Result);
+
+  end;
 end;
 
 
@@ -396,13 +470,23 @@ end;
 function TGUID.AsString : ShortString;
 
 
+var
+  iByte, iRes: SizeInt;
+
 begin
-  WriteStr(Result,'{',hexstr(Longint(D1),8),
-                      '-',HexStr(D2,4),
-                      '-',HexStr(D3,4),
-                      '-',HexStr(D4[0],2), HexStr(D4[1],2),
-                      '-',HexStr(D4[2],2), HexStr(D4[3],2), HexStr(D4[4],2), HexStr(D4[5],2), HexStr(D4[6],2), HexStr(D4[7],2),
-                   '}');
+  Result[0]:=#38;
+  Result[1]:='{';
+  Result[10]:='-';
+  Result[15]:='-';
+  Result[20]:='-';
+  Result[25]:='-';
+  Result[38]:='}';
+  for iByte:=0 to High(cAsStringByteScatter) do
+  begin
+    iRes:=cAsStringByteScatter[iByte];
+    PAnsiChar(@Result[0])[iRes]:=HexTbl[PByte(@Self)[iByte] shr 4];
+    PAnsiChar(@Result[0])[iRes+1]:=HexTbl[PByte(@Self)[iByte] and $F];
+  end;
 end;
 
 {****************************************************************************
@@ -1154,10 +1238,19 @@ end;
       class procedure TObject.GetLastCastErrorInfo(out aFrom,aTo : shortstring);
 
       begin
-        aFrom:=CastErrorFrom;
-        aTo:=CastErrorTo;
-        CastErrorFrom:='';
-        CastErrorTo:='';
+        case CastError.From.Mode of
+          CastErrorFromClass: aFrom:=CastError.From._Class.ClassName;
+          CastErrorFromExternalInterface: aFrom:='External interface';
+          else aFrom:='';
+        end;
+        case CastError._To.Mode of
+          CastErrorToClass: aTo:=CastError._To._Class.ClassName;
+          CastErrorToComInterface: aTo:=CastError._To.IID.AsString;
+          CastErrorToCorbaInterface: aTo:=CastError._To.CorbaName;
+          else aTo:='';
+        end;
+        CastError.From.Mode:=CastErrorFromNA;
+        CastError._To.Mode:=CastErrorToNA;
       end;
 
       class function TObject.UnitName : RTLString;
